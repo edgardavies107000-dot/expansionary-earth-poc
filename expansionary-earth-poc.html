@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expansionary Earth — Wireframe Proof of Concept</title>
+<style>
+  :root{
+    --bg:#050608;
+    --line:#39424f;
+    --line-bright:#7c8a99;
+    --accent:#4fd7e0;
+    --accent2:#ff9b52;
+    --text:#e7ecf0;
+    --text-dim:#8b95a1;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #scene{position:fixed; inset:0;}
+  canvas{display:block; touch-action:none;}
+
+  .panel{
+    position:fixed;
+    background:rgba(8,10,13,0.72);
+    border:1px solid rgba(255,255,255,0.08);
+    backdrop-filter:blur(6px);
+    border-radius:10px;
+  }
+
+  #hud{
+    top:20px; left:20px;
+    padding:16px 20px;
+    max-width:300px;
+  }
+  #hud .stage-label{
+    font-size:11px; letter-spacing:0.08em; color:var(--text-dim);
+    margin-bottom:4px;
+  }
+  #hud h1{
+    font-size:19px; margin:0 0 4px 0; font-weight:600; color:var(--text);
+  }
+  #hud p{
+    font-size:13px; line-height:1.5; margin:0 0 12px 0; color:var(--text-dim);
+  }
+  #hud .stat-row{
+    display:flex; justify-content:space-between;
+    font-size:12px; padding:5px 0; border-top:1px solid rgba(255,255,255,0.06);
+  }
+  #hud .stat-row span:first-child{color:var(--text-dim);}
+  #hud .stat-row span:last-child{color:var(--accent); font-variant-numeric:tabular-nums;}
+
+  #transport{
+    bottom:24px; left:50%; transform:translateX(-50%);
+    padding:14px 22px 18px 22px;
+    width:min(640px, 90vw);
+  }
+  #transport .row{
+    display:flex; align-items:center; gap:14px;
+  }
+  #playBtn{
+    width:36px; height:36px; border-radius:50%;
+    border:1px solid rgba(255,255,255,0.18);
+    background:rgba(255,255,255,0.04);
+    color:var(--text); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; font-size:13px;
+  }
+  #playBtn:hover{background:rgba(255,255,255,0.1);}
+  #slider{
+    flex:1; -webkit-appearance:none; appearance:none;
+    height:4px; border-radius:2px;
+    background:linear-gradient(90deg, var(--accent2), var(--accent));
+    outline:none; cursor:pointer;
+  }
+  #slider::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:16px; height:16px; border-radius:50%;
+    background:#fff; border:2px solid var(--accent);
+    cursor:pointer; margin-top:-1px;
+  }
+  #slider::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background:#fff; border:2px solid var(--accent); cursor:pointer;
+  }
+  #ticks{
+    display:flex; justify-content:space-between;
+    margin-top:8px; padding:0 2px;
+  }
+  #ticks span{
+    font-size:9.5px; letter-spacing:0.03em; color:var(--text-dim);
+    text-align:center; width:20%;
+  }
+  #ticks span.active{color:var(--accent);}
+
+  #hint{
+    top:20px; right:20px;
+    padding:10px 14px;
+    font-size:11px; color:var(--text-dim); line-height:1.6;
+    text-align:right;
+  }
+  #hint b{color:var(--text);}
+
+  #logo{
+    top:20px; left:50%; transform:translateX(-50%);
+    padding:6px 14px;
+    font-size:10.5px; letter-spacing:0.14em; color:var(--text-dim);
+  }
+
+  @media (max-width:640px){
+    #hud{max-width:min(78vw,260px); padding:12px 14px;}
+    #hud h1{font-size:16px;}
+    #hud p{font-size:12px;}
+    #hint{display:none;}
+    #transport{width:92vw; padding:12px 16px 16px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div id="logo" class="panel">EXPANSIONARY PLANETARY PHYSICS · WIREFRAME POC</div>
+
+<div id="hud" class="panel">
+  <div class="stage-label" id="stageLabel">STAGE 1 / 5</div>
+  <h1 id="stageName">Primordial Earth</h1>
+  <p id="stageDesc">Hot, molten, fractured. Continents tightly joined into a single compact landmass.</p>
+  <div class="stat-row"><span>Radius (of present)</span><span id="radiusStat">30%</span></div>
+  <div class="stat-row"><span>Continent footprint</span><span id="footprintStat">Joined / compact</span></div>
+</div>
+
+<div id="hint" class="panel">
+  <b>Drag</b> to orbit · <b>Scroll</b> to zoom<br>
+  Slider below scrubs expansion
+</div>
+
+<div id="transport" class="panel">
+  <div class="row">
+    <button id="playBtn">▶</button>
+    <input type="range" id="slider" min="0" max="4" step="0.005" value="0">
+  </div>
+  <div id="ticks">
+    <span data-i="0">Primordial</span>
+    <span data-i="1">Expansion &amp; Cooling</span>
+    <span data-i="2">First Rivers</span>
+    <span data-i="3">Ocean Basins</span>
+    <span data-i="4">Present Day</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+
+// ---------------------------------------------------------------
+// PHASE DATA — matches the client's 4-stage arc + present-day anchor.
+// Radius fractions taken directly from the brief's reference chart.
+// ---------------------------------------------------------------
+const PHASES = [
+  { name:"Primordial Earth", desc:"Hot, molten, fractured. Continents tightly joined into a single compact landmass.", radius:0.30, footprint:"Joined / compact" },
+  { name:"Expansion & Cooling", desc:"Radius increases, cracks widen, heat and gases escape. Continents still very close.", radius:0.425, footprint:"Beginning to loosen" },
+  { name:"First Rivers", desc:"Rain falls into cracks and rifts. Continents begin separating as the surface cools.", radius:0.55, footprint:"Separating" },
+  { name:"Early Ocean Basins", desc:"New oceanic floor forms and spreads sideways. Oceans grow, continents driven further apart.", radius:0.70, footprint:"Widely separated" },
+  { name:"Present Day", desc:"Current planetary configuration and continental arrangement.", radius:1.00, footprint:"Present-day fit" }
+];
+
+// ---------------------------------------------------------------
+// CONTINENT DATA
+// Each continent has:
+//   joined   — approximate centroid lat/lon in the compact "Primordial" configuration
+//   current  — real-world centroid lat/lon today
+//   outline  — simplified silhouette as [dLat, dLon] offsets from centroid,
+//              sized to their TRUE angular extent at present-day radius (R=1.0).
+//
+// Rendering rule (the actual "physics" of the demo):
+//   at any phase, sphere radius R(t) is looked up/interpolated from PHASES.
+//   centroid(t) = lerp(joined, current, t/4)  — continents drift apart over time.
+//   outline offsets are scaled by (1/R(t))^0.6 — since a continent's real
+//   surface area stays constant while the sphere's area shrinks, its angular
+//   footprint must grow as the sphere gets smaller. The 0.6 exponent softens
+//   the effect for a legible, non-overlapping silhouette rather than the
+//   literal 1/R^2 area relationship, which would over-distort shapes at the
+//   smallest radius. This is the mechanism that makes continents visually
+//   "close up" into a joined mass as the planet shrinks.
+// Simplified silhouettes only — recognizable, not survey-accurate (per brief: ~80% recognizable is the target for early stages).
+// ---------------------------------------------------------------
+const CONTINENTS = [
+  {
+    name:"North America",
+    joined:  { lat: 12, lon: -32 },
+    current: { lat: 45, lon: -100 },
+    outline: [[28,-28],[24,5],[14,22],[2,20],[-8,10],[-16,-4],[-20,-16],[-12,-28],[0,-36],[16,-40],[28,-28]]
+  },
+  {
+    name:"South America",
+    joined:  { lat: -12, lon: -22 },
+    current: { lat: -15, lon: -60 },
+    outline: [[18,-14],[10,6],[0,11],[-14,5],[-28,-4],[-36,-7],[-32,-14],[-18,-19],[-2,-21],[10,-19],[18,-14]]
+  },
+  {
+    name:"Africa",
+    joined:  { lat: -2, lon: -8 },
+    current: { lat: 5, lon: 20 },
+    outline: [[30,-6],[26,14],[30,33],[16,44],[0,41],[-18,26],[-29,14],[-25,-4],[-11,-14],[9,-15],[24,-11],[30,-6]]
+  },
+  {
+    name:"Eurasia",
+    joined:  { lat: 22, lon: 2 },
+    current: { lat: 50, lon: 80 },
+    outline: [[24,-58],[29,-19],[33,19],[29,58],[19,96],[9,132],[-4,144],[-9,116],[-14,86],[-9,48],[-14,18],[-9,-19],[1,-48],[11,-62],[24,-58]]
+  },
+  {
+    name:"Australia",
+    joined:  { lat: -22, lon: 12 },
+    current: { lat: -25, lon: 135 },
+    outline: [[9,-14],[11,9],[4,19],[-8,21],[-14,10],[-14,-9],[-7,-17],[2,-17],[9,-14]]
+  },
+  {
+    name:"Antarctica",
+    joined:  { lat: -38, lon: -18 },
+    current: { lat: -85, lon: 0 },
+    outline: [[8,-160],[9,-120],[8,-80],[9,-40],[8,0],[9,40],[8,80],[9,120],[8,160],[8,-160]]
+  }
+];
+
+// ---------------------------------------------------------------
+// THREE.JS SETUP
+// ---------------------------------------------------------------
+const container = document.getElementById('scene');
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 3.1);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x050608, 1);
+container.appendChild(renderer.domElement);
+
+const world = new THREE.Group();
+scene.add(world);
+world.rotation.x = -0.15;
+world.rotation.y = 0.5;
+
+// ---- lat/lon -> vec3 -------------------------------------------------
+function latLonToVec3(lat, lon, radius){
+  lat = Math.max(-89.9, Math.min(89.9, lat));
+  const phi = (90 - lat) * Math.PI/180;
+  const theta = (lon + 180) * Math.PI/180;
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+     radius * Math.cos(phi),
+     radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// ---- base wireframe grid sphere (meridians + parallels) --------------
+const gridGroup = new THREE.Group();
+world.add(gridGroup);
+const gridMat = new THREE.LineBasicMaterial({ color:0x39424f, transparent:true, opacity:0.85 });
+
+function buildGrid(radius){
+  gridGroup.clear();
+  // meridians
+  for(let lon=-180; lon<180; lon+=20){
+    const pts=[];
+    for(let lat=-90; lat<=90; lat+=4) pts.push(latLonToVec3(lat,lon,radius));
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    gridGroup.add(new THREE.Line(geo, gridMat));
+  }
+  // parallels
+  for(let lat=-80; lat<=80; lat+=20){
+    const pts=[];
+    for(let lon=-180; lon<=180; lon+=4) pts.push(latLonToVec3(lat,lon,radius));
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    gridGroup.add(new THREE.LineLoop(geo, gridMat));
+  }
+}
+
+// ---- continent outlines ----------------------------------------------
+const continentGroup = new THREE.Group();
+world.add(continentGroup);
+const continentMat = new THREE.LineBasicMaterial({ color:0x4fd7e0, linewidth:2 });
+const continentLines = CONTINENTS.map(()=>{
+  const geo = new THREE.BufferGeometry();
+  const line = new THREE.LineLoop(geo, continentMat);
+  continentGroup.add(line);
+  return line;
+});
+
+// ---- subtle core glow (reads as the hot interior at small radius) ----
+const coreGeo = new THREE.SphereGeometry(1, 24, 16);
+const coreMat = new THREE.MeshBasicMaterial({ color:0xff9b52, transparent:true, opacity:0.05 });
+const core = new THREE.Mesh(coreGeo, coreMat);
+world.add(core);
+
+// ---------------------------------------------------------------
+// PHASE EVALUATION
+// ---------------------------------------------------------------
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+function radiusAt(t){
+  const i = Math.floor(t);
+  const f = t - i;
+  const a = PHASES[Math.min(i, PHASES.length-1)];
+  const b = PHASES[Math.min(i+1, PHASES.length-1)];
+  return lerp(a.radius, b.radius, f);
+}
+
+function applyPhase(t){
+  t = Math.max(0, Math.min(PHASES.length-1, t));
+  const R = radiusAt(t);
+  const f = t / (PHASES.length-1); // 0..1 overall progress, joined -> current
+
+  buildGrid(R);
+  core.scale.setScalar(R * 0.97);
+
+  const scaleFactor = Math.pow(1/R, 0.6); // footprint grows as sphere shrinks
+
+  CONTINENTS.forEach((c, idx) => {
+    const cLat = lerp(c.joined.lat, c.current.lat, f);
+    const cLon = lerp(c.joined.lon, c.current.lon, f);
+    const pts = c.outline.map(([dLat,dLon]) => {
+      const lat = cLat + dLat*scaleFactor;
+      const lon = cLon + dLon*scaleFactor;
+      return latLonToVec3(lat, lon, R * 1.002); // hair above grid to avoid z-fighting
+    });
+    continentLines[idx].geometry.dispose();
+    continentLines[idx].geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  });
+
+  // HUD
+  const i = Math.round(t);
+  const p = PHASES[i];
+  document.getElementById('stageLabel').textContent = `STAGE ${i+1} / ${PHASES.length}`;
+  document.getElementById('stageName').textContent = p.name;
+  document.getElementById('stageDesc').textContent = p.desc;
+  document.getElementById('radiusStat').textContent = Math.round(R*100) + '%';
+  document.getElementById('footprintStat').textContent = p.footprint;
+  document.querySelectorAll('#ticks span').forEach(el=>{
+    el.classList.toggle('active', parseInt(el.dataset.i,10) === i);
+  });
+}
+
+applyPhase(0);
+
+// ---------------------------------------------------------------
+// SLIDER + AUTOPLAY
+// ---------------------------------------------------------------
+const slider = document.getElementById('slider');
+const playBtn = document.getElementById('playBtn');
+let playing = false;
+let playDir = 1;
+
+slider.addEventListener('input', () => {
+  applyPhase(parseFloat(slider.value));
+});
+
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  playBtn.textContent = playing ? '❚❚' : '▶';
+});
+
+// ---------------------------------------------------------------
+// DRAG-TO-ORBIT + SCROLL-TO-ZOOM (no external dependency)
+// ---------------------------------------------------------------
+let isDragging = false;
+let prevX = 0, prevY = 0;
+let velX = 0, velY = 0;
+
+function pointerDown(x,y){ isDragging = true; prevX = x; prevY = y; }
+function pointerMove(x,y){
+  if(!isDragging) return;
+  const dx = x - prevX, dy = y - prevY;
+  world.rotation.y += dx * 0.005;
+  world.rotation.x += dy * 0.005;
+  world.rotation.x = Math.max(-1.4, Math.min(1.4, world.rotation.x));
+  velX = dx * 0.005; velY = dy * 0.005;
+  prevX = x; prevY = y;
+}
+function pointerUp(){ isDragging = false; }
+
+renderer.domElement.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
+window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', pointerUp);
+
+renderer.domElement.addEventListener('touchstart', e => {
+  const t = e.touches[0]; pointerDown(t.clientX, t.clientY);
+}, {passive:true});
+renderer.domElement.addEventListener('touchmove', e => {
+  const t = e.touches[0]; pointerMove(t.clientX, t.clientY);
+}, {passive:true});
+renderer.domElement.addEventListener('touchend', pointerUp);
+
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  camera.position.z = Math.max(1.6, Math.min(6, camera.position.z + e.deltaY*0.0025));
+}, {passive:false});
+
+// ---------------------------------------------------------------
+// RESIZE
+// ---------------------------------------------------------------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------------------------------------------------------------
+// RENDER LOOP
+// ---------------------------------------------------------------
+let autoT = 0;
+function tick(){
+  requestAnimationFrame(tick);
+
+  if(playing){
+    autoT += 0.006 * playDir;
+    if(autoT >= PHASES.length-1){ autoT = PHASES.length-1; playDir = -1; }
+    if(autoT <= 0){ autoT = 0; playDir = 1; }
+    slider.value = autoT;
+    applyPhase(autoT);
+  }
+
+  if(!isDragging){
+    world.rotation.y += velX;
+    world.rotation.x += velY;
+    velX *= 0.94; velY *= 0.94;
+    world.rotation.x = Math.max(-1.4, Math.min(1.4, world.rotation.x));
+    if(!playing && Math.abs(velX) < 0.0001 && Math.abs(velY) < 0.0001){
+      world.rotation.y += 0.0012; // gentle idle spin when untouched
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+tick();
+
+})();
+</script>
+</body>
+</html>
