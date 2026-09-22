@@ -170,62 +170,42 @@ const PHASES = [
 ];
 
 // ---------------------------------------------------------------
-// CONTINENT DATA
-// Each continent has:
-//   joined   — approximate centroid lat/lon in the compact "Primordial" configuration
-//   current  — real-world centroid lat/lon today
-//   outline  — simplified silhouette as [dLat, dLon] offsets from centroid,
-//              sized to their TRUE angular extent at present-day radius (R=1.0).
+// LANDMASS DATA
+// The first version of this POC used hand-approximated continent outlines,
+// which read as abstract blobs rather than recognizable landmasses.
+// This version loads REAL simplified coastline geometry (Natural Earth,
+// public domain, via the world-atlas distribution) at runtime and derives
+// each landmass's shape directly from it — so shapes are actually correct,
+// not eyeballed.
 //
-// Rendering rule (the actual "physics" of the demo):
+// Rendering rule (unchanged from v1 — this is the actual "physics" of the demo):
 //   at any phase, sphere radius R(t) is looked up/interpolated from PHASES.
-//   centroid(t) = lerp(joined, current, t/4)  — continents drift apart over time.
-//   outline offsets are scaled by (1/R(t))^0.6 — since a continent's real
-//   surface area stays constant while the sphere's area shrinks, its angular
-//   footprint must grow as the sphere gets smaller. The 0.6 exponent softens
-//   the effect for a legible, non-overlapping silhouette rather than the
-//   literal 1/R^2 area relationship, which would over-distort shapes at the
-//   smallest radius. This is the mechanism that makes continents visually
-//   "close up" into a joined mass as the planet shrinks.
-// Simplified silhouettes only — recognizable, not survey-accurate (per brief: ~80% recognizable is the target for early stages).
+//   each landmass's centroid is pulled toward a single shared "gather point"
+//   as t -> 0 (all landmasses converge toward one joined mass), and eases
+//   out to its true present-day position as t -> 4.
+//   outline offsets (relative to centroid) are scaled by (1/R(t))^0.6 —
+//   since a landmass's real surface area stays constant while the sphere's
+//   area shrinks, its angular footprint must grow as the sphere gets
+//   smaller. The 0.6 exponent softens the effect for a legible silhouette
+//   rather than the literal 1/R^2 area relationship, which would over-
+//   distort shapes at the smallest radius.
 // ---------------------------------------------------------------
-const CONTINENTS = [
-  {
-    name:"North America",
-    joined:  { lat: 12, lon: -32 },
-    current: { lat: 45, lon: -100 },
-    outline: [[28,-28],[24,5],[14,22],[2,20],[-8,10],[-16,-4],[-20,-16],[-12,-28],[0,-36],[16,-40],[28,-28]]
-  },
-  {
-    name:"South America",
-    joined:  { lat: -12, lon: -22 },
-    current: { lat: -15, lon: -60 },
-    outline: [[18,-14],[10,6],[0,11],[-14,5],[-28,-4],[-36,-7],[-32,-14],[-18,-19],[-2,-21],[10,-19],[18,-14]]
-  },
-  {
-    name:"Africa",
-    joined:  { lat: -2, lon: -8 },
-    current: { lat: 5, lon: 20 },
-    outline: [[30,-6],[26,14],[30,33],[16,44],[0,41],[-18,26],[-29,14],[-25,-4],[-11,-14],[9,-15],[24,-11],[30,-6]]
-  },
-  {
-    name:"Eurasia",
-    joined:  { lat: 22, lon: 2 },
-    current: { lat: 50, lon: 80 },
-    outline: [[24,-58],[29,-19],[33,19],[29,58],[19,96],[9,132],[-4,144],[-9,116],[-14,86],[-9,48],[-14,18],[-9,-19],[1,-48],[11,-62],[24,-58]]
-  },
-  {
-    name:"Australia",
-    joined:  { lat: -22, lon: 12 },
-    current: { lat: -25, lon: 135 },
-    outline: [[9,-14],[11,9],[4,19],[-8,21],[-14,10],[-14,-9],[-7,-17],[2,-17],[9,-14]]
-  },
-  {
-    name:"Antarctica",
-    joined:  { lat: -38, lon: -18 },
-    current: { lat: -85, lon: 0 },
-    outline: [[8,-160],[9,-120],[8,-80],[9,-40],[8,0],[9,40],[8,80],[9,120],[8,160],[8,-160]]
-  }
+const GATHER = { lat: 8, lon: 12 };      // shared convergence point for the "joined" configuration
+const GATHER_STRENGTH = 0.92;            // how tightly landmasses converge at t=0 (0-1)
+const MAX_LANDMASSES = 7;                // top N landmasses by size, keeps the wireframe clean
+const TARGET_POINTS_PER_RING = 60;       // downsample real coastlines to this many points
+
+let landmasses = [];       // populated once real data loads: [{lat,lon,offsets:[[dLat,dLon],...]}, ...]
+let continentLines = [];   // THREE.LineLoop objects, one per landmass
+
+// Fallback silhouettes (only used if the coastline data fails to load, e.g. offline)
+const FALLBACK_CONTINENTS = [
+  { lat: 45, lon: -100, outline: [[28,-28],[24,5],[14,22],[2,20],[-8,10],[-16,-4],[-20,-16],[-12,-28],[0,-36],[16,-40],[28,-28]] },
+  { lat: -15, lon: -60, outline: [[18,-14],[10,6],[0,11],[-14,5],[-28,-4],[-36,-7],[-32,-14],[-18,-19],[-2,-21],[10,-19],[18,-14]] },
+  { lat: 5, lon: 20, outline: [[30,-6],[26,14],[30,33],[16,44],[0,41],[-18,26],[-29,14],[-25,-4],[-11,-14],[9,-15],[24,-11],[30,-6]] },
+  { lat: 50, lon: 80, outline: [[24,-58],[29,-19],[33,19],[29,58],[19,96],[9,132],[-4,144],[-9,116],[-14,86],[-9,48],[-14,18],[-9,-19],[1,-48],[11,-62],[24,-58]] },
+  { lat: -25, lon: 135, outline: [[9,-14],[11,9],[4,19],[-8,21],[-14,10],[-14,-9],[-7,-17],[2,-17],[9,-14]] },
+  { lat: -85, lon: 0, outline: [[8,-160],[9,-120],[8,-80],[9,-40],[8,0],[9,40],[8,80],[9,120],[8,160],[8,-160]] }
 ];
 
 // ---------------------------------------------------------------
@@ -287,12 +267,17 @@ function buildGrid(radius){
 const continentGroup = new THREE.Group();
 world.add(continentGroup);
 const continentMat = new THREE.LineBasicMaterial({ color:0x4fd7e0, linewidth:2 });
-const continentLines = CONTINENTS.map(()=>{
-  const geo = new THREE.BufferGeometry();
-  const line = new THREE.LineLoop(geo, continentMat);
-  continentGroup.add(line);
-  return line;
-});
+
+function buildContinentLines(count){
+  continentGroup.clear();
+  continentLines = [];
+  for(let i=0;i<count;i++){
+    const geo = new THREE.BufferGeometry();
+    const line = new THREE.LineLoop(geo, continentMat);
+    continentGroup.add(line);
+    continentLines.push(line);
+  }
+}
 
 // ---- subtle core glow (reads as the hot interior at small radius) ----
 const coreGeo = new THREE.SphereGeometry(1, 24, 16);
@@ -304,6 +289,12 @@ world.add(core);
 // PHASE EVALUATION
 // ---------------------------------------------------------------
 function lerp(a,b,t){ return a + (b-a)*t; }
+
+// shortest-path interpolation for longitude, so crossing +/-180 doesn't spin the long way round
+function lerpAngle(a,b,t){
+  const diff = ((b - a + 540) % 360) - 180;
+  return a + diff*t;
+}
 
 function radiusAt(t){
   const i = Math.floor(t);
@@ -323,17 +314,22 @@ function applyPhase(t){
 
   const scaleFactor = Math.pow(1/R, 0.6); // footprint grows as sphere shrinks
 
-  CONTINENTS.forEach((c, idx) => {
-    const cLat = lerp(c.joined.lat, c.current.lat, f);
-    const cLon = lerp(c.joined.lon, c.current.lon, f);
-    const pts = c.outline.map(([dLat,dLon]) => {
-      const lat = cLat + dLat*scaleFactor;
-      const lon = cLon + dLon*scaleFactor;
-      return latLonToVec3(lat, lon, R * 1.002); // hair above grid to avoid z-fighting
+  if(landmasses.length && continentLines.length === landmasses.length){
+    landmasses.forEach((lm, idx) => {
+      // at f=0 (Primordial) centroid sits near the shared GATHER point;
+      // at f=1 (Present Day) it's at the landmass's true real-world position.
+      const gatherAmount = GATHER_STRENGTH * (1 - f);
+      const cLat = lerp(lm.lat, GATHER.lat, gatherAmount);
+      const cLon = lerpAngle(lm.lon, GATHER.lon, gatherAmount);
+      const pts = lm.offsets.map(([dLat,dLon]) => {
+        const lat = cLat + dLat*scaleFactor;
+        const lon = cLon + dLon*scaleFactor;
+        return latLonToVec3(lat, lon, R * 1.002); // hair above grid to avoid z-fighting
+      });
+      continentLines[idx].geometry.dispose();
+      continentLines[idx].geometry = new THREE.BufferGeometry().setFromPoints(pts);
     });
-    continentLines[idx].geometry.dispose();
-    continentLines[idx].geometry = new THREE.BufferGeometry().setFromPoints(pts);
-  });
+  }
 
   // HUD
   const i = Math.round(t);
@@ -349,6 +345,86 @@ function applyPhase(t){
 }
 
 applyPhase(0);
+
+// ---------------------------------------------------------------
+// LOAD REAL COASTLINE DATA
+// Fetches Natural Earth's public-domain 110m land geometry (via the
+// world-atlas distribution, TopoJSON) and topojson-client to decode it.
+// Falls back to the simplified hand-drawn silhouettes if the fetch fails
+// (e.g. no internet at load time) so the demo still shows something.
+// ---------------------------------------------------------------
+function initFromRings(rings){
+  // rings: array of { lat, lon, points: [[lon,lat], ...] }
+  // Rank by rough angular area (lon-span * lat-span * cos(latitude)), keep the biggest N.
+  rings.forEach(r => {
+    let minLat=90,maxLat=-90,minLon=180,maxLon=-180;
+    r.points.forEach(([lon,lat])=>{
+      if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat;
+      if(lon<minLon)minLon=lon; if(lon>maxLon)maxLon=lon;
+    });
+    const latSpan = maxLat-minLat, lonSpan = Math.min(maxLon-minLon, 360-(maxLon-minLon));
+    r.area = latSpan * lonSpan * Math.max(0.15, Math.cos(r.lat*Math.PI/180));
+  });
+  rings.sort((a,b)=> b.area - a.area);
+  const top = rings.slice(0, MAX_LANDMASSES);
+
+  landmasses = top.map(r => {
+    const step = Math.max(1, Math.floor(r.points.length / TARGET_POINTS_PER_RING));
+    const offsets = [];
+    for(let i=0;i<r.points.length;i+=step){
+      const [lon,lat] = r.points[i];
+      offsets.push([lat - r.lat, lon - r.lon]);
+    }
+    return { lat:r.lat, lon:r.lon, offsets };
+  });
+
+  buildContinentLines(landmasses.length);
+  applyPhase(parseFloat(slider.value));
+}
+
+function circularLonMean(points){
+  let sx=0, sy=0;
+  points.forEach(([lon]) => { const r=lon*Math.PI/180; sx+=Math.sin(r); sy+=Math.cos(r); });
+  return Math.atan2(sx, sy) * 180/Math.PI;
+}
+
+async function loadLandmasses(){
+  try{
+    const [topoRes, tjRes] = await Promise.all([
+      fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json'),
+      import('https://cdn.jsdelivr.net/npm/topojson-client@3/+esm')
+    ]);
+    if(!topoRes.ok) throw new Error('coastline fetch failed');
+    const topology = await topoRes.json();
+    const geo = tjRes.feature(topology, topology.objects.land);
+    const polygons = geo.type === 'FeatureCollection'
+      ? geo.features.map(f => f.geometry)
+      : [geo.geometry];
+
+    const rings = [];
+    polygons.forEach(g => {
+      const polys = g.type === 'MultiPolygon' ? g.coordinates : [g.coordinates];
+      polys.forEach(poly => {
+        const outer = poly[0]; // outer boundary only, ignore holes
+        if(outer.length < 6) return; // skip tiny specks
+        const lat = outer.reduce((s,p)=>s+p[1],0) / outer.length;
+        const lon = circularLonMean(outer);
+        rings.push({ lat, lon, points: outer });
+      });
+    });
+
+    initFromRings(rings);
+  } catch(err){
+    console.warn('Real coastline data failed to load, using fallback silhouettes:', err);
+    const rings = FALLBACK_CONTINENTS.map(c => ({
+      lat: c.lat, lon: c.lon,
+      points: c.outline.map(([dLat,dLon]) => [c.lon+dLon, c.lat+dLat])
+    }));
+    initFromRings(rings);
+  }
+}
+
+loadLandmasses();
 
 // ---------------------------------------------------------------
 // SLIDER + AUTOPLAY
